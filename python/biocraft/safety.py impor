@@ -1,0 +1,64 @@
+Mmimport time
+import numpy as np
+from typing import Optional
+
+class RateLimiter:
+    """Simple per-command rate limiter."""
+    def __init__(self, interval_seconds=0.05):
+        self.interval = float(interval_seconds)
+        self._last_time = 0.0
+
+    def allow(self):
+        now = time.time()
+        if now - self._last_time >= self.interval:
+            self._last_time = now
+            return True
+        return False
+
+def human_in_the_loop_gate(prompt: str, timeout: Optional[float] = 30.0):
+    """Simulated human in the loop gating. In real system, replace with secure UI/approval channel."""
+    print(f"[HUMAN GATE] {prompt}")
+    print(f"Type 'yes' to approve within {timeout}s:")
+    start = time.time()
+    while True:
+        if timeout is not None and (time.time() - start) > timeout:
+            print("Approval timed out.")
+            return False
+        try:
+            if input().strip().lower() == "yes":
+                return True
+        except EOFError:
+            return False
+
+class SafetyLayer:
+    """Safety wrapper for transforming commands into safe actuator primitives."""
+
+    def __init__(self, translational_limits_mm=None, rotational_limits_deg=None, rate_interval=0.02):
+        # bounds as [min, max] in mm for x,y,z
+        self.translational_limits_mm = np.array(translational_limits_mm if translational_limits_mm is not None else [[-1000, 1000], [-1000, 1000], [-1000, 1000]], dtype=float)
+        # rotational limits in degrees for roll, pitch, yaw
+        self.rotational_limits_deg = np.array(rotational_limits_deg if rotational_limits_deg is not None else [[-180, 180], [-180, 180], [-180, 180]], dtype=float)
+        self.rate_limiter = RateLimiter(interval_seconds=rate_interval)
+
+    def validate_translation(self, t):
+        t = np.array(t, dtype=float)
+        for i in range(3):
+            if not (self.translational_limits_mm[i,0] <= t[i] <= self.translational_limits_mm[i,1]):
+                raise ValueError(f"Translation {t} out of bounds on axis {i}: {self.translational_limits_mm[i]}")
+        return True
+
+    def validate_rotation_euler_deg(self, euler_deg):
+        euler_deg = np.array(euler_deg, dtype=float)
+        for i in range(3):
+            if not (self.rotational_limits_deg[i,0] <= euler_deg[i] <= self.rotational_limits_deg[i,1]):
+                raise ValueError(f"Rotation {euler_deg} out of bounds on axis {i}: {self.rotational_limits_deg[i]}")
+        return True
+
+    def allow_command(self):
+        if not self.rate_limiter.allow():
+            raise RuntimeError("Rate limit exceeded")
+        return True
+
+    def authorize_high_risk(self, prompt):
+        # In production, integrate MFA, signed approval, and audit logging
+        return human_in_the_loop_gate(prompt, timeout=30.0)
