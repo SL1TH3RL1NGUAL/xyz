@@ -1,0 +1,20 @@
+from fastapi import FastAPI, Request
+from datetime import datetime
+import json
+import os
+
+app = FastAPI()
+
+LOG_DIR = os.path.expanduser("~/webhook-logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+@app.post("/github-webhook")
+async def github_webhook(request: Request):
+    body = await request.body()
+    ts = datetime.utcnow().isoformat()
+    path = os.path.join(LOG_DIR, f"payload-{ts}.json")
+
+    with open(path, "wb") as f:
+        f.write(body)
+
+    return {"status": "ok", "logged": path}
